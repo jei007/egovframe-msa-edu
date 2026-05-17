@@ -1,0 +1,156 @@
+# 클러스터 관측용 OpenTelemetry Collector를 DaemonSet 으로 배포한다(노드당 하나).
+# - ServiceAccount + RBAC: k8s 메타데이터 보강(k8sattributes) 시 Pod/Node 정보 조회용.
+# - ConfigMap: OTLP 수신 + 노드의 컨테이너 로그(filelog) 수집 → Jaeger·Loki·Prometheus(스크레이프용 메트릭 엔드포인트)로 전달.
+# - 호스트의 /var/log/pods 를 읽으므로 DaemonSet + hostPath 마운트가 필요하다.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: observe
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "deployments"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: observe
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observe
+data:
+  collector.yaml: |
+    # 파드 안에서 실행되는 Collector 설정(OTLP·로그 수신 후 관측 백엔드로 fan-out).
+    receivers:
+      otlp:
+        protocols:
+          # Collector 0.108+ 기본값은 localhost:4317/4318 → Pod IP 로는 Connection refused(503).
+          # msaedu 앱·Service 경유 수신을 위해 0.0.0.0 에 바인딩한다.
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        start_at: beginning
+        include_file_path: true
+
+    processors:
+      k8sattributes:
+        auth_type: serviceAccount
+      # Kiali 는 Jaeger 조회 시 tags.istio.cluster_id 를 항상 붙인다(readQuery).
+      # Spring OTLP 스팬에 없으면 Kiali Traces 탭·API 가 비어 보인다.
+      attributes/kiali:
+        actions:
+          - key: istio.cluster_id
+            value: Kubernetes
+            action: upsert
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      prometheus:
+        # kube-prometheus-stack additionalScrapeConfigs 가 :8889 를 스크랩.
+        endpoint: 0.0.0.0:8889
+      loki:
+        endpoint: http://loki-gateway.observe/loki/api/v1/push
+      # Jaeger Helm(all-in-one) 기본 Service 이름은 release 가 jaeger 일 때 보통 `jaeger`(jaeger-collector 아님).
+      otlp/jaeger:
+        endpoint: jaeger.observe:4317
+        tls:
+          insecure: true
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [k8sattributes, attributes/kiali, batch]
+          exporters: [otlp/jaeger]
+        metrics:
+          receivers: [otlp]
+          processors: [k8sattributes, batch]
+          exporters: [prometheus]
+        logs:
+          receivers: [otlp, filelog]
+          processors: [k8sattributes, batch]
+          exporters: [loki]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector
+  namespace: observe
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      serviceAccountName: otel-collector  # k8sattributes 프로세서용
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.108.0
+          args: ["--config=/conf/collector.yaml"]
+          ports:
+            - containerPort: 4317  # OTLP gRPC (Jaeger 로 재전송)
+            - containerPort: 4318  # OTLP HTTP (Spring Micrometer)
+            - containerPort: 8889  # Prometheus exporter
+          volumeMounts:
+            - name: otel-config
+              mountPath: /conf
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+      volumes:
+        - name: otel-config
+          configMap:
+            name: otel-collector-config
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: observe
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    - name: prometheus
+      port: 8889
+      targetPort: 8889

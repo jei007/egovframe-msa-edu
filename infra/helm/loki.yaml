@@ -1,0 +1,49 @@
+# Loki Helm 차트 값: 로그 저장소. Collector 가 gateway 경유로 push 한다.
+#
+# grafana/loki 차트(7.x) 기본값은 deploymentMode=SimpleScalable 이며 객체 스토리지(S3 등)와
+# loki.storage.bucketNames.chunks 가 필요하다. 교육·로컬 클러스터용으로 SingleBinary +
+# filesystem 스토리지로 맞춘다.
+
+# SimpleScalable(기본) 대신 단일 Pod + 로컬 디스크 — minikube·교육용.
+deploymentMode: SingleBinary
+
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true   # Pod 재시작 후에도 로그 유지
+    size: 10Gi
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+loki:
+  auth_enabled: false       # 멀티테넌트 인증 비활성(단일 클러스터 교육용)
+  commonConfig:
+    replication_factor: 1   # SingleBinary 이므로 1
+  storage:
+    type: filesystem        # S3/객체 스토리지 없이 노드 PVC 사용
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h       # 인덱스 테이블 롤링 주기
+
+gateway:
+  enabled: true             # otel-collector → loki-gateway 로 push
+  # minikube 등 단일 노드: required podAntiAffinity 이면 롤아웃 시 구·신 Pod 동시에 2개가 되어 Pending → Kiali observe Failure
+  affinity: {}
+
+# SimpleScalable 용 타깃 비활성화(SingleBinary 전환 시 필수)
+write:
+  replicas: 0
+read:
+  replicas: 0
+backend:
+  replicas: 0

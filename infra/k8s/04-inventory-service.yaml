@@ -1,0 +1,184 @@
+# 재고 서비스: latest(정상) / risky(5xx 주입) 두 버전을 운영한다.
+# - 단일 Service `inventory-service` 가 두 Deployment 를 모두 endpoint 로 잡고
+#   Istio 기본 ROUND_ROBIN 으로 라운드로빈 분산한다.
+# - 10-inventory-circuit-breaking.yaml 의 outlierDetection 으로 risky 가 회로 차단되면
+#   요청이 latest 로만 라우팅된다.
+# - latest 는 HPA 로 부하 증가 시 스케일 아웃한다(metrics-server 필요).
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service-latest
+  namespace: msaedu
+  labels:
+    app: inventory-service
+    version: latest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-service
+      version: latest
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        version: latest
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+        # latest Pod 여러 개 + HPA 시 사이드카 리소스 상한을 낮춰 노드 여유 확보.
+        sidecar.istio.io/proxyCPU: "10m"
+        sidecar.istio.io/proxyMemory: "128Mi"
+    spec:
+      containers:
+        - name: inventory-service
+          image: your-registry/inventory-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          env:
+            - name: INVENTORY_VERSION
+              value: latest
+            - name: INVENTORY_FAULT_MODE
+              value: none
+            - name: PAYMENT_BASE_URL
+              value: http://payment-service:8081
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://otel-collector.observe:4318/v1/traces
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: http://otel-collector.observe:4318/v1/metrics
+          resources:
+            # 교육용 HPA: Spring 샘플은 실제 CPU 가 낮아 requests 를 작게 잡아야
+            # latest 로 트래픽이 몰릴 때 utilization 이 올라가 Replica 가 늘어난다.
+            requests:
+              cpu: 20m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service-risky
+  namespace: msaedu
+  labels:
+    app: inventory-service
+    version: risky
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-service
+      version: risky
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        version: risky
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      containers:
+        - name: inventory-service
+          image: your-registry/inventory-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          env:
+            - name: INVENTORY_VERSION
+              value: risky
+            - name: INVENTORY_FAULT_MODE
+              value: always-5xx  # reserve API 가 503 → 서킷브레이크·502 데모용
+            - name: PAYMENT_BASE_URL
+              value: http://payment-service:8081
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://otel-collector.observe:4318/v1/traces
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: http://otel-collector.observe:4318/v1/metrics
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: msaedu
+  labels:
+    app: inventory-service
+spec:
+  # app=inventory-service 인 모든 Pod(latest+risky)를 하나의 ClusterIP 로 묶음 → Istio RR.
+  selector:
+    app: inventory-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+---
+# inventory-latest 스케일 아웃: 서킷브레이커 후 트래픽 100%가 latest 에 몰리면 CPU 상승 → HPA 확장.
+# minikube: `minikube addons enable metrics-server` (02_install-istio.sh 에서 자동 시도).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: inventory-service-latest-hpa
+  namespace: msaedu
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inventory-service-latest
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    # Pod 전체 CPU 는 istio-proxy 와 합산되어 HPA 가 unknown 이 되기 쉬움 → 앱 컨테이너만 대상.
+    - type: ContainerResource
+      containerResource:
+        name: cpu
+        container: inventory-service
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 15   # 15초마다 최대 2 Pod 씩 증가
+    scaleDown:
+      stabilizationWindowSeconds: 180  # 급감 방지(데모 후 천천히 축소)

@@ -1,0 +1,39 @@
+# inventory-service 라운드로빈 + 서킷브레이커 (Kiali Traffic Graph 실습용).
+#
+# - subset: latest(정상) / risky(INVENTORY_FAULT_MODE=always-5xx → 503)
+# - 단일 host(inventory-service) 에 대해 Istio 기본 LB 알고리즘 ROUND_ROBIN 으로 분산
+# - outlierDetection: risky endpoint 에 5xx 가 연속 10회(= risky 로 10회 실패) 시 50초간 격리
+#   → 이후 요청은 latest(정상) 로만 라우팅(100%) → CPU 부하 증가 → HPA 스케일아웃.
+# - subsets 는 Kiali "Versioned app graph" 에서 latest / risky 노드를 분리해 보여주는 데 쓰인다.
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: inventory-service-dr
+  namespace: msaedu
+spec:
+  host: inventory-service
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 10   # risky endpoint 연속 5xx 10회 → 격리
+      interval: 10s
+      baseEjectionTime: 50s      # 격리 최소 유지 시간
+      maxEjectionPercent: 100
+      minHealthPercent: 0
+  subsets:
+    # Pod label version 과 매칭 — Kiali Versioned graph 에 latest/risky 노드로 표시.
+    - name: latest
+      labels:
+        version: latest
+    - name: risky
+      labels:
+        version: risky

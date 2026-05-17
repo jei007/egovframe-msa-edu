@@ -1,0 +1,91 @@
+# Kiali Helm 차트 값: 클러스터(Istio) 전용. UI NodePort 30001.
+# auth.strategy: anonymous 는 교육 편의용이다.
+#
+# 데이터 흐름 확인을 위해 다음을 명시한다.
+# - Istio 제어 플레인은 istio-system (Kiali 릴리스는 observe 이므로 root_namespace 필수).
+# - Prometheus·Grafana·Jaeger(관측 스택) URL 및 트레이스 provider(Jaeger, HTTP Query).
+# - 브라우저용 Grafana/Jaeger URL 은 05_start-lab-access.sh 가 localhost 포트로 helm upgrade 한다.
+#   (NodePort·minikube ip 직접 접속이 안 되는 macOS docker / WSL 환경용)
+
+auth:
+  # anonymous: 로그인 없이 UI 사용(교육용). 운영 환경에서는 token/openid 등 권장.
+  strategy: anonymous
+
+# Kiali 가 Jaeger 조회 tags 에 넣는 istio.cluster_id 와 일치 (단일 클러스터 교육용).
+kubernetes_config:
+  cluster_name: Kubernetes
+
+deployment:
+  # NodePort: minikube 등에서 호스트 30001 로 UI 접속(또는 05_start-lab-access port-forward).
+  service_type: NodePort
+  # 관측 네임스페이스 간 통신·istiod 조회가 막히지 않도록(교육용 클러스터 권장).
+  network_policy:
+    enabled: false
+
+server:
+  port: 20001          # Pod/Service 컨테이너 포트
+  node_port: 30001     # NodePort (lab-access 는 보통 localhost:13001 로 포워드)
+
+external_services:
+  # Istio: 메시 그래프·워크로드·프록시 상태는 istio-system 의 istiod·게이트웨이를 기준으로 동작한다.
+  istio:
+    # Kiali 릴리스 네임스페이스(observe)가 아닌 Istio 설치 위치(istioctl demo → istio-system).
+    root_namespace: istio-system
+    istio_api_enabled: true
+    config_map_name: istio
+    istiod_deployment_name: istiod
+    istiod_pod_monitoring_port: 15014
+    ingress_gateway_namespace: istio-system
+
+  prometheus:
+    # Kiali Graph·헬스·메트릭 링크용 Prometheus Query API (istio_requests_total 등).
+    url: http://kube-prometheus-stack-prometheus.observe:9090
+    cache_duration: 180  # PromQL 결과 캐시(초). Graph 반복 조회 부하 완화.
+
+  grafana:
+    enabled: true
+    # kube-prometheus-stack 기본 Prometheus datasource UID
+    datasource_uid: prometheus
+    auth:
+      type: basic
+      username: admin
+      password: admin
+    # 제목은 Grafana 에 설치된 Istio 대시보드 JSON 의 title 과 일치 (lib/install-grafana-istio-dashboards.sh).
+    # Istio 1.29+ 변수명: workload(namespace/workload), service(service/dstns).
+    # Service 대시보드 JSON 은 install-grafana-istio-dashboards.sh 에서 destination_service_name 으로 패치한다.
+    dashboards:
+      - name: "Istio Service Dashboard"
+        variables:
+          datasource: "datasource"
+          namespace: "dstns"
+          service: "service"
+      - name: "Istio Workload Dashboard"
+        variables:
+          datasource: "datasource"
+          namespace: "namespace"
+          workload: "workload"
+      - name: "Istio Mesh Dashboard"
+      - name: "Istio Control Plane Dashboard"
+      - name: "Istio Performance Dashboard"
+      - name: "Istio Wasm Extension Dashboard"
+    internal_url: http://kube-prometheus-stack-grafana.observe:80
+    # Kiali UI 에서 Grafana 대시보드 링크(브라우저가 접속 가능한 URL). 미설정 시 링크만 비활성·탐색은 internal_url 로 동작.
+    # 예: helm upgrade ... --set-string external_services.grafana.external_url=http://<NODE_IP>:30002
+    external_url: ""
+
+  tracing:
+    enabled: true
+    provider: jaeger       # Tempo 대신 Jaeger Query API 사용
+    auth:
+      type: none
+    # Spring OTel 은 spring.application.name 만 Jaeger service 로 쓴다(order-service).
+    # 기본값(true)이면 Kiali 가 order-service.msaedu 로 조회해 Traces 탭이 비어 보인다.
+    namespace_selector: false
+    # Jaeger all-in-one Query HTTP(16686). gRPC(16685) 대신 JSON API 를 쓰도록 use_grpc: false.
+    internal_url: http://jaeger.observe:16686
+    use_grpc: false
+    # Jaeger UI NodePort(30003) 등 브라우저 URL. 미설정 시 Kiali 내장 Traces 탭·백엔드 조회는 internal_url 로 동작.
+    external_url: ""
+
+  custom_dashboards:
+    enabled: true

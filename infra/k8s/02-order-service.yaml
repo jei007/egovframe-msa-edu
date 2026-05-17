@@ -1,0 +1,71 @@
+# 주문 서비스: Istio Ingress(/api/orders) 진입점. inventory-service 만 호출한다.
+# 실제 주문/결제 흐름은 inventory 가 payment 까지 연쇄 호출하므로 라우팅·CB는 inventory-service 쪽에서 다룬다.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: msaedu
+  labels:
+    app: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        version: v1
+      annotations:
+        # 헬스체크를 앱 포트(8080)로내도록 Envoy 가 경로 재작성(사이드카 + probe 충돌 방지).
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      containers:
+        - name: order-service
+          image: your-registry/order-service:1.0.0  # 01_build-images.sh 후 레지스트리/TAG 로 교체
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: INVENTORY_BASE_URL
+              value: http://inventory-service:8082  # 클러스터 DNS(단일 Service → latest|risky RR)
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: http://otel-collector.observe:4318/v1/traces
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: http://otel-collector.observe:4318/v1/metrics
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: msaedu
+  labels:
+    app: order-service
+spec:
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

@@ -1,0 +1,41 @@
+# Istio Ingress Gateway 로 들어온 HTTP 트래픽을 order-service 로 라우팅한다.
+# 진입점: POST http://<INGRESS_HOST>/api/orders (lab-access 기준 http://localhost:18088/api/orders)
+# 흐름: ingressgateway → order-service → inventory-service(라운드로빈: latest|risky) → payment-service.
+# 라운드로빈·서킷브레이커는 inventory 의 DestinationRule(10-inventory-circuit-breaking.yaml) 에서 설정한다.
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: msaedu-gateway
+  namespace: msaedu
+spec:
+  selector:
+    istio: ingressgateway  # istio-system 의 ingressgateway Pod
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"               # 모든 Host 헤더 허용(교육용. 운영에서는 도메인 제한 권장)
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: order-service-vs
+  namespace: msaedu
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - msaedu-gateway      # 위 Gateway 리소스에 바인딩
+  http:
+    - match:
+        - uri:
+            prefix: /api/orders
+      route:
+        - destination:
+            host: order-service  # msaedu/order-service Service(8080)
+            port:
+              number: 8080

@@ -1,0 +1,40 @@
+# Istio Envoy(istio-proxy) 메트릭을 kube-prometheus-stack Prometheus 가 수집하도록 한다.
+# Kiali Traffic Graph 는 Prometheus 의 istio_requests_total 등을 사용한다.
+#
+# 스크랩 포트는 15090(http-envoy-prom) 이 아니라 15020(pilot-agent 병합 메트릭) 이다.
+# 15090 은 Pod IP 로 긁으면 istio_requests_total(앱 간 트래픽)이 비어 있고, Prometheus 스크랩
+# 자체만 잡혀 Kiali 에 observe 위주 그래프만 보이는 현상이 난다(istio/istio#38272).
+#
+# 전제: Prometheus Operator PodMonitor CRD (kube-prometheus-stack 설치 시 포함)
+# 라벨 release=kube-prometheus-stack → prometheus.podMonitorSelector 와 일치
+
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istio-envoy-stats
+  namespace: observe
+  labels:
+    release: kube-prometheus-stack  # Prometheus Operator 가 이 라벨로 PodMonitor 선택
+    app.kubernetes.io/component: istio-metrics
+spec:
+  jobLabel: envoy-stats
+  namespaceSelector:
+    matchNames:
+      - msaedu          # 앱 워크로드 Envoy
+      - istio-system    # ingressgateway 등
+  selector:
+    matchExpressions:
+      - key: istio-prometheus-ignore
+        operator: DoesNotExist
+  podMetricsEndpoints:
+    - port: http-envoy-prom   # Service 에 정의된 이름(실제 스크랩 주소는 relabel 로 덮음)
+      path: /stats/prometheus
+      interval: 15s
+      relabelings:
+        - action: keep
+          sourceLabels: [__meta_kubernetes_pod_container_name]
+          regex: istio-proxy
+        # Pod IP:15020 — pilot-agent 가 노출하는 병합 Envoy 메트릭(istio_requests_total 포함).
+        - sourceLabels: [__meta_kubernetes_pod_ip]
+          targetLabel: __address__
+          replacement: $1:15020

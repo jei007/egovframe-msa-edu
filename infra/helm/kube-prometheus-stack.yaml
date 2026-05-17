@@ -1,0 +1,24 @@
+# kube-prometheus-stack 차트 설치 시 덮어쓰는 값(03_install-observability.sh 참고).
+# 교육용 고정 NodePort: Grafana 30002, Prometheus 30004 (방화벽·클라우드 보안그룹에서 허용 필요).
+# Istio Envoy 메트릭: infra/k8s/09-istio-envoy-podmonitor.yaml (Kiali Traffic Graph).
+
+grafana:
+  adminPassword: admin    # Kiali external_services.grafana.auth 와 동일(교육용)
+  service:
+    type: NodePort
+    nodePort: 30002       # 호스트 30002 또는 lab-access 13002
+
+prometheus:
+  service:
+    enabled: true
+    type: NodePort
+    nodePort: 30004       # 호스트 30004 또는 lab-access 13004
+    port: 9090
+    targetPort: 9090
+  prometheusSpec:
+    # 앱 OTLP 메트릭: Collector 가 :8889 에 Prometheus 형식으로 노출 → 여기서 스크랩.
+    # Istio Envoy 메트릭은 k8s/09-istio-envoy-podmonitor.yaml (PodMonitor) 로 수집.
+    additionalScrapeConfigs:
+      - job_name: otel-collector
+        static_configs:
+          - targets: ["otel-collector.observe.svc.cluster.local:8889"]

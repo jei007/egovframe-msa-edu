@@ -1,0 +1,8 @@
+# Jaeger Helm 차트(all-in-one). 교육용 메모리 저장소.
+# - Query HTTP: Service jaeger:16686 (Kiali internal_url)
+# - OTLP gRPC 수신: :4317 (otel-collector otlp/jaeger exporter)
+# - 브라우저 UI 고정 포트 30003 은 infra/k8s/08-jaeger-ui-nodeport.yaml 로 노출한다.
+
+storage:
+  # memory: Pod 재시작·Jaeger 재배포 시 trace 소실. 데모 후 바로 UI 에서 확인할 것.
+  type: memory

@@ -1,0 +1,58 @@
+# 재고 서비스 공통 설정. order → inventory → payment 흐름의 중간 단계.
+
+spring:
+  application:
+    name: inventory-service
+
+server:
+  port: 8082
+
+# payment 서비스 베이스 URL (클러스터 내부 DNS).
+services:
+  payment:
+    base-url: ${PAYMENT_BASE_URL:http://payment-service:8081}
+
+# 장애전파·서킷브레이커 실습(risky 인스턴스): INVENTORY_FAULT_MODE=always-5xx
+inventory:
+  version: ${INVENTORY_VERSION:latest}
+  fault:
+    mode: ${INVENTORY_FAULT_MODE:none}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector.observe:4318/v1/traces}
+  metrics:
+    export:
+      otlp:
+        enabled: true
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://otel-collector.observe:4318/v1/metrics}
+  observations:
+    key-values:
+      service: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  show-actuator: false
+
+logging:
+  pattern:
+    correlation: "[%X{traceId:-},%X{spanId:-}] "
+  level:
+    root: INFO

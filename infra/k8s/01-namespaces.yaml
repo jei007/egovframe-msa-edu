@@ -1,0 +1,21 @@
+# 클러스터 실습용 네임스페이스.
+# - msaedu: 샘플 마이크로서비스·Istio Gateway/VirtualService 등 애플리케이션 트래픽 영역.
+#   istio-injection=enabled 로 새 Pod 에 Envoy 사이드카가 자동 주입된다(Kiali Traffic Graph 의 메트릭 출처).
+# - observe: Prometheus·Grafana·Loki·Jaeger·Kiali·OTel Collector 관측 컴포넌트.
+#   사이드카 없이 운영(istio-injection 미부여). msaedu→observe 의 OTLP 등은 11-mesh-egress-to-observe.yaml
+#   의 DestinationRule(TLS DISABLE)로 plain HTTP 호출이 허용된다.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: msaedu
+  labels:
+    # 새 Pod 생성 시 istio-proxy 사이드카 자동 주입 → 메시 메트릭·mTLS·VirtualService 적용.
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observe
+  # istio-injection 라벨 없음 → 관측 스택은 사이드카 없이 plain HTTP 로 동작.
