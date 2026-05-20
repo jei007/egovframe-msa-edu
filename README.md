@@ -238,17 +238,6 @@ curl "http://localhost:18081/api/payments/simulate-delay?millis=2500"
 
 ## 7. 문서
 
-### 교육 (`docs/`)
-
-| 문서 | 내용 |
-|------|------|
-| [`docs/README.md`](docs/README.md) | 교육 자료 목록·진행 순서 |
-| [`training-00-schedule.md`](docs/training-00-schedule.md) | 150분 타임테이블 |
-| [`training-03-project-architecture.md`](docs/training-03-project-architecture.md) | 서비스·메시·관측 아키텍처 |
-| [`training-04-hands-on-lab.md`](docs/training-04-hands-on-lab.md) | Hands-on 실습 절차 |
-| [`training-instructor-guide.md`](docs/training-instructor-guide.md) | 강사용 체크리스트 |
-| [`terminology-glossary.md`](docs/terminology-glossary.md) | 용어 정리 |
-
 ### 인프라 (`infra/docs/`)
 
 | 문서 | 내용 |
