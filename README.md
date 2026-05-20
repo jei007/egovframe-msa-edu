@@ -66,7 +66,7 @@
 
 | 파일 | 용도 |
 |------|------|
-| [`infra/config.env`](infra/config.env) | (선택) `EGOVFRAME_MSA_ROOT`, `REGISTRY`, `TAG` |
+| [`infra/config.env`](infra/config.env) | `REGISTRY`, `TAG`, (Windows 환경에서는 필수) `EGOVFRAME_MSA_ROOT`, |
 | [`infra/lab-access.env`](infra/lab-access.env) | `LAB_ACCESS_HOST`, `LAB_PORT_*` — `05` port-forward·데모 URL |
 
 `config.env`에 루트 경로를 넣지 않으면 clone 위치 기준으로 자동 계산됩니다.
@@ -215,28 +215,7 @@ curl "http://localhost:18081/api/payments/simulate-delay?millis=2500"
 
 클러스터 NodePort(30001~30004)는 Linux 노드 IP에서 직접 접속하는 환경용입니다.
 
----
-
-## 6. 교육 진행 (150분)
-
-강의·실습 상세는 [`docs/README.md`](docs/README.md)와 [`docs/training-00-schedule.md`](docs/training-00-schedule.md)를 따릅니다.
-
-| 순서 | 내용 | 시간 |
-|------|------|------|
-| ① | MSA 소개 | 30분 |
-| ② | Kubernetes·Service Mesh | 30분 |
-| ③ | 프로젝트·아키텍처 | 25분 → [`training-03`](docs/training-03-project-architecture.md) |
-| ④ | 배포·메시·관측 실습 | 55분 → [`training-04`](docs/training-04-hands-on-lab.md) |
-| — | 마무리·Q&A | 10분 |
-
-①·② 강의안 파일명은 [`training-00-schedule.md`](docs/training-00-schedule.md)를 참고하세요.
-
-**강사:** [`docs/training-instructor-guide.md`](docs/training-instructor-guide.md) — 사전 리허설·장애 대응  
-**사전 점검:** `./infra/scripts/07_rehearsal-dryrun.sh` (Maven 빌드·스크립트·경로 검증)
-
----
-
-## 7. 문서
+## 6. 문서
 
 ### 인프라 (`infra/docs/`)
 
@@ -264,7 +243,7 @@ curl "http://localhost:18081/api/payments/simulate-delay?millis=2500"
 
 ---
 
-## 8. 참고
+## 7. 참고
 
 - OTel Collector DaemonSet이 노드 Pod 로그를 Loki로, OTLP 메트릭·트레이스를 Prometheus·Jaeger로 전달합니다.
 - 클러스터마다 StorageClass, LoadBalancer, 보안 정책 조정이 필요할 수 있습니다.
