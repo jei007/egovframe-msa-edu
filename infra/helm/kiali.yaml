@@ -11,7 +11,7 @@ auth:
   # anonymous: 로그인 없이 UI 사용(교육용). 운영 환경에서는 token/openid 등 권장.
   strategy: anonymous
 
-# Kiali 가 Jaeger 조회 tags 에 넣는 istio.cluster_id 와 일치 (단일 클러스터 교육용).
+# [traces] Kiali Jaeger 조회 tags.istio.cluster_id 와 일치 — 07-otel-collector attributes/kiali 와 동일 값.
 kubernetes_config:
   cluster_name: Kubernetes
 
@@ -73,18 +73,21 @@ external_services:
     # 예: helm upgrade ... --set-string external_services.grafana.external_url=http://<NODE_IP>:30002
     external_url: ""
 
+  # [트레이스 확인] 10_demo-kiali-traces.sh [4/4] Kiali UI:
+  #   Graph → order-service 클릭 → Traces 탭(Overview 아님) | Service: order-service | Last 15m
+  #   verify_tracing_kiali_app_traces: GET .../apps/order-service/traces
   tracing:
     enabled: true
     provider: jaeger       # Tempo 대신 Jaeger Query API 사용
     auth:
       type: none
-    # Spring OTel 은 spring.application.name 만 Jaeger service 로 쓴다(order-service).
-    # 기본값(true)이면 Kiali 가 order-service.msaedu 로 조회해 Traces 탭이 비어 보인다.
+    # [traces] Spring OTel 은 spring.application.name 만 Jaeger service 로 씀(order-service).
+    # true 이면 order-service.msaedu 로 조회 → Traces 탭·API 0건.
     namespace_selector: false
-    # Jaeger all-in-one Query HTTP(16686). gRPC(16685) 대신 JSON API 를 쓰도록 use_grpc: false.
+    # [traces] Jaeger Query HTTP — Collector 가 OTLP 로 넣은 스팬 조회
     internal_url: http://jaeger.observe:16686
     use_grpc: false
-    # Jaeger UI NodePort(30003) 등 브라우저 URL. 미설정 시 Kiali 내장 Traces 탭·백엔드 조회는 internal_url 로 동작.
+    # [traces] 브라우저 Jaeger 링크. 05_start-lab-access.sh 가 localhost:13003 으로 helm upgrade 가능
     external_url: ""
 
   custom_dashboards:

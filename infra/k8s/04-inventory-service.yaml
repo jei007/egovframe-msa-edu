@@ -4,6 +4,15 @@
 # - 10-inventory-circuit-breaking.yaml 의 outlierDetection 으로 risky 가 회로 차단되면
 #   요청이 latest 로만 라우팅된다.
 # - latest 는 HPA 로 부하 증가 시 스케일 아웃한다(metrics-server 필요).
+#
+# [서킷브레이크·스케일아웃] 09_demo-inventory-circuit-break.sh:
+#   - risky: 503 주입 → outlierDetection 카운트 | latest: CB 후 100% 트래픽 + HPA 대상
+#   - 단일 Service → 10-inventory-circuit-breaking.yaml ROUND_ROBIN
+#   - HPA: inventory-service-latest-hpa (하단) — 02_install-istio.sh metrics-server 필요
+#
+# [트레이스 확인] 10_demo-kiali-traces.sh:
+#   - 케이스 A(latest): 중간 스팬 "http post /api/inventories/reserve" + payment 자식 스팬
+#   - 케이스 B(risky, 09 Phase1 직후): 503 스팬, payment 스팬 없음
 
 ---
 apiVersion: apps/v1
@@ -11,6 +20,7 @@ kind: Deployment
 metadata:
   name: inventory-service-latest
   namespace: msaedu
+  # [HPA] scaleTargetRef 대상 — CB 격리 후 트래픽이 몰리는 정상 인스턴스
   labels:
     app: inventory-service
     version: latest
@@ -27,7 +37,7 @@ spec:
         version: latest
       annotations:
         sidecar.istio.io/rewriteAppHTTPProbers: "true"
-        # latest Pod 여러 개 + HPA 시 사이드카 리소스 상한을 낮춰 노드 여유 확보.
+        # [HPA] latest Pod 다수 + HPA scaleUp 시 노드 여유 — Envoy proxy 리소스 상한
         sidecar.istio.io/proxyCPU: "10m"
         sidecar.istio.io/proxyMemory: "128Mi"
     spec:
@@ -41,16 +51,17 @@ spec:
             - name: INVENTORY_VERSION
               value: latest
             - name: INVENTORY_FAULT_MODE
-              value: none
+              value: none  # [circuit-breaker] 503 미주입 — CB 발동 후 유일한 라우팅 대상
             - name: PAYMENT_BASE_URL
               value: http://payment-service:8081
+            # [traces] OTLP — 동일 traceId 로 payment 스팬과 연결(Micrometer 전파)
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
               value: http://otel-collector.observe:4318/v1/traces
             - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
               value: http://otel-collector.observe:4318/v1/metrics
           resources:
-            # 교육용 HPA: Spring 샘플은 실제 CPU 가 낮아 requests 를 작게 잡아야
-            # latest 로 트래픽이 몰릴 때 utilization 이 올라가 Replica 가 늘어난다.
+            # [HPA] 09_demo Phase3: cpu requests 20m(cpu core 2%) → CB 후 부하 시 utilization↑ → replica 증가
+            # (istio-proxy 제외하고 inventory-service 컨테이너 CPU 만 HPA 가 본다)
             requests:
               cpu: 20m
               memory: 256Mi
@@ -81,6 +92,7 @@ kind: Deployment
 metadata:
   name: inventory-service-risky
   namespace: msaedu
+  # [circuit-breaker] RR 의 절반 — always-5xx 로 503 → consecutive5xxErrors 누적
   labels:
     app: inventory-service
     version: risky
@@ -108,7 +120,7 @@ spec:
             - name: INVENTORY_VERSION
               value: risky
             - name: INVENTORY_FAULT_MODE
-              value: always-5xx  # reserve API 가 503 → 서킷브레이크·502 데모용
+              value: always-5xx  # [circuit-breaker] reserve 503 → order 502, outlier 10회 후 eject
             - name: PAYMENT_BASE_URL
               value: http://payment-service:8081
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
@@ -142,7 +154,7 @@ metadata:
   labels:
     app: inventory-service
 spec:
-  # app=inventory-service 인 모든 Pod(latest+risky)를 하나의 ClusterIP 로 묶음 → Istio RR.
+  # [circuit-breaker] latest+risky 를 하나의 ClusterIP — 10-inventory-circuit-breaking ROUND_ROBIN
   selector:
     app: inventory-service
   ports:
@@ -150,12 +162,12 @@ spec:
       port: 8082
       targetPort: 8082
 ---
-# inventory-latest 스케일 아웃: 서킷브레이커 후 트래픽 100%가 latest 에 몰리면 CPU 상승 → HPA 확장.
-# minikube: `minikube addons enable metrics-server` (02_install-istio.sh 에서 자동 시도).
+# [HPA·스케일아웃] 09_demo Phase [3/3]: CB 후 latest 100% + 반복 POST → replica 1→N
+# 전제: metrics-server (02_install-istio.sh) | 관찰: kubectl get hpa,deploy -n msaedu -w
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: inventory-service-latest-hpa
+  name: inventory-service-latest-hpa  # 09_demo 스크립트가 jsonpath 로 조회
   namespace: msaedu
 spec:
   scaleTargetRef:
@@ -163,22 +175,22 @@ spec:
     kind: Deployment
     name: inventory-service-latest
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 5   # [HPA] 교육 데모 상한
   metrics:
-    # Pod 전체 CPU 는 istio-proxy 와 합산되어 HPA 가 unknown 이 되기 쉬움 → 앱 컨테이너만 대상.
+    # [HPA] Pod 전체 CPU 는 istio-proxy 포함 시 unknown → inventory-service 컨테이너만
     - type: ContainerResource
       containerResource:
         name: cpu
         container: inventory-service
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 50  # [HPA] 50% 초과 시 scaleUp
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
       policies:
         - type: Pods
           value: 2
-          periodSeconds: 15   # 15초마다 최대 2 Pod 씩 증가
+          periodSeconds: 15   # [HPA] 15초마다 최대 +2 Pod (09_demo Phase3 관찰)
     scaleDown:
-      stabilizationWindowSeconds: 180  # 급감 방지(데모 후 천천히 축소)
+      stabilizationWindowSeconds: 180  # [HPA] 데모 종료 후 천천히 축소

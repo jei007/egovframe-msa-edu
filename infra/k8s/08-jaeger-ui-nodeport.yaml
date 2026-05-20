@@ -1,5 +1,8 @@
 # Jaeger Helm 차트 서비스는 다중 포트라 고정 nodePort 를 두기 어렵다.
 # UI(16686)만 호스트 30003 으로 노출하는 보조 Service (release 이름이 jaeger 인 경우 선택자와 일치).
+#
+# [트레이스 확인] 05_start-lab-access.sh 가 svc/jaeger-ui-nodeport → localhost:13003 포워드.
+#   10_demo-kiali-traces.sh: verify_tracing_jaeger_url, Jaeger UI 직접 비교(케이스 A 3단 스팬).
 ---
 apiVersion: v1
 kind: Service
@@ -14,7 +17,7 @@ spec:
     - name: http-query
       port: 16686
       targetPort: 16686
-      nodePort: 30003       # 호스트 30003 또는 lab-access 13003
+      nodePort: 30003       # 호스트 30003 | lab-access LAB_PORT_JAEGER=13003 포워드
       protocol: TCP
   selector:
     # Helm release 이름이 jaeger 일 때 all-in-one Pod 라벨과 일치해야 함.

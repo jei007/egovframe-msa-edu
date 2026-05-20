@@ -1,6 +1,9 @@
 # observe 네임스페이스(Prometheus·Grafana·Jaeger·Loki·Kiali·OTel Collector)는 Istio 사이드카가
 # 없는 일반 워크로드다. msaedu 사이드카가 이쪽으로 mTLS 를 시도하면 503 UF/URX 가 발생한다.
 # DestinationRule 로 해당 호스트들에 대해 TLS DISABLE 을 명시해 plain HTTP 로 호출하도록 한다.
+#
+# [트레이스 확인] 10_demo-kiali-traces.sh [1/4] OTLP 점검 실패(503) 시 우선 확인:
+#   otel-collector-egress 가 없으면 order → otel-collector.observe:4318 전송 불가 → Jaeger/Kiali 비어 있음
 
 ---
 apiVersion: networking.istio.io/v1beta1
@@ -9,10 +12,11 @@ metadata:
   name: otel-collector-egress
   namespace: msaedu
 spec:
-  host: otel-collector.observe.svc.cluster.local  # 앱 OTLP·메트릭 전송 대상(필수)
+  # [traces] 02~04 Pod 의 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT 가 가리키는 호스트(필수)
+  host: otel-collector.observe.svc.cluster.local
   trafficPolicy:
     tls:
-      mode: DISABLE   # observe 에 사이드카 없음 → mTLS 끔
+      mode: DISABLE   # observe 에 사이드카 없음 → plain HTTP OTLP
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
@@ -31,6 +35,7 @@ metadata:
   name: jaeger-egress
   namespace: msaedu
 spec:
+  # [traces] Kiali 는 클러스터 내부에서 jaeger:16686 Query API 사용(브라우저는 05 port-forward)
   host: jaeger.observe.svc.cluster.local
   trafficPolicy:
     tls:

@@ -67,7 +67,8 @@ istioctl install -y --set profile=demo
 kubectl label namespace msaedu istio-injection=enabled --overwrite
 kubectl label namespace observe istio-injection- --overwrite >/dev/null 2>&1 || true
 
-# minikube HPA 동작용 metrics-server (이미 켜져 있으면 무시)
+# [HPA·스케일아웃] 04-inventory-service-latest-hpa 가 CPU 메트릭을 쓰려면 metrics-server 필요.
+# 09_demo-inventory-circuit-break.sh Phase [3/3] replica 증가 관찰 전제.
 if command -v minikube >/dev/null 2>&1; then
   _profile="${MINIKUBE_PROFILE:-minikube}"
   if minikube -p "${_profile}" status >/dev/null 2>&1; then

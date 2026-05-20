@@ -4,6 +4,7 @@
 # - observe: Prometheus·Grafana·Loki·Jaeger·Kiali·OTel Collector 관측 컴포넌트.
 #   사이드카 없이 운영(istio-injection 미부여). msaedu→observe 의 OTLP 등은 11-mesh-egress-to-observe.yaml
 #   의 DestinationRule(TLS DISABLE)로 plain HTTP 호출이 허용된다.
+#   [트레이스] 10_demo 파이프라인: msaedu(스팬 생성) → observe(otel-collector·Jaeger·Kiali)
 
 ---
 apiVersion: v1

@@ -12,7 +12,8 @@ services:
   payment:
     base-url: ${PAYMENT_BASE_URL:http://payment-service:8081}
 
-# 장애전파·서킷브레이커 실습(risky 인스턴스): INVENTORY_FAULT_MODE=always-5xx
+# [circuit-breaker] k8s 04: latest=none / risky=always-5xx → 503 → Istio outlierDetection(10)
+# 09_demo: risky 503 누적 후 latest 100% | order 는 502 (inventory-5xx)
 inventory:
   version: ${INVENTORY_VERSION:latest}
   fault:
@@ -27,6 +28,7 @@ management:
     health:
       probes:
         enabled: true
+  # [traces] 10_demo 중간 스팬 — "http post /api/inventories/reserve"
   tracing:
     sampling:
       probability: 1.0

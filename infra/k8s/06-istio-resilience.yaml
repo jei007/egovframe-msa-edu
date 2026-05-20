@@ -1,5 +1,6 @@
-# inventory → payment 호출에 대한 보조 정책(타임아웃·재시도). 핵심 서킷브레이커는
-# 10-inventory-circuit-breaking.yaml(order → inventory) 에 있다.
+# inventory → payment 호출에 대한 보조 정책(타임아웃·재시도).
+# [서킷브레이크] 09_demo 의 핵심 CB·RR·HPA 는 order→inventory 구간:
+#   10-inventory-circuit-breaking.yaml + 04-inventory-service.yaml (본 파일과 무관)
 
 ---
 apiVersion: networking.istio.io/v1beta1

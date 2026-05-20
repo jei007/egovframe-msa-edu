@@ -2,6 +2,11 @@
 # - ServiceAccount + RBAC: k8s 메타데이터 보강(k8sattributes) 시 Pod/Node 정보 조회용.
 # - ConfigMap: OTLP 수신 + 노드의 컨테이너 로그(filelog) 수집 → Jaeger·Loki·Prometheus(스크레이프용 메트릭 엔드포인트)로 전달.
 # - 호스트의 /var/log/pods 를 읽으므로 DaemonSet + hostPath 마운트가 필요하다.
+#
+# [트레이스 확인] 10_demo-kiali-traces.sh 파이프라인의 중심:
+#   msaedu 앱(Micrometer OTLP HTTP :4318) → otel-collector → Jaeger(:4317) → Kiali Traces 탭
+#   - verify_tracing_otlp_from_order: order → 이 Service :4318 POST 기대 200
+#   - attributes/kiali(istio.cluster_id) 누락 시 Kiali Traces API 가 비어 보임
 
 ---
 apiVersion: v1
@@ -48,10 +53,11 @@ data:
         protocols:
           # Collector 0.108+ 기본값은 localhost:4317/4318 → Pod IP 로는 Connection refused(503).
           # msaedu 앱·Service 경유 수신을 위해 0.0.0.0 에 바인딩한다.
+          # [traces] Spring Boot 는 HTTP(4318). gRPC(4317) 는 Collector → Jaeger 전송용.
           grpc:
             endpoint: 0.0.0.0:4317
           http:
-            endpoint: 0.0.0.0:4318
+            endpoint: 0.0.0.0:4318  # OTEL_EXPORTER_OTLP_TRACES_ENDPOINT (/v1/traces)
       filelog:
         include:
           - /var/log/pods/*/*/*.log
@@ -61,8 +67,9 @@ data:
     processors:
       k8sattributes:
         auth_type: serviceAccount
-      # Kiali 는 Jaeger 조회 시 tags.istio.cluster_id 를 항상 붙인다(readQuery).
-      # Spring OTLP 스팬에 없으면 Kiali Traces 탭·API 가 비어 보인다.
+      # [traces/Kiali] Jaeger 조회 시 tags.istio.cluster_id 를 항상 붙인다(readQuery).
+      # Spring OTLP 스팬에 없으면 10_demo 의 verify_tracing_kiali_app_traces 가 0건.
+      # 값은 infra/helm/kiali.yaml 의 kubernetes_config.cluster_name 과 동일해야 한다.
       attributes/kiali:
         actions:
           - key: istio.cluster_id
@@ -78,7 +85,7 @@ data:
         endpoint: 0.0.0.0:8889
       loki:
         endpoint: http://loki-gateway.observe/loki/api/v1/push
-      # Jaeger Helm(all-in-one) 기본 Service 이름은 release 가 jaeger 일 때 보통 `jaeger`(jaeger-collector 아님).
+      # [traces] Jaeger Helm(all-in-one) Service `jaeger` OTLP gRPC 수신 → Query UI :16686
       otlp/jaeger:
         endpoint: jaeger.observe:4317
         tls:
@@ -86,6 +93,7 @@ data:
 
     service:
       pipelines:
+        # [traces] 앱 스팬 수집 파이프라인 — 10_demo 케이스 A 3단 스팬(order→inventory→payment) 저장 경로
         traces:
           receivers: [otlp]
           processors: [k8sattributes, attributes/kiali, batch]
@@ -148,6 +156,7 @@ spec:
     - name: otlp-grpc
       port: 4317
       targetPort: 4317
+    # [traces] Cluster DNS otel-collector.observe:4318 — 02~04 Deployment 의 OTLP env 와 짝
     - name: otlp-http
       port: 4318
       targetPort: 4318

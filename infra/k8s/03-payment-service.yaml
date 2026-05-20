@@ -1,5 +1,8 @@
-# 결제 서비스: 주문 서비스에서 HTTP로 호출된다.
+# 결제 서비스: inventory-service 가 HTTP로 호출한다(말단).
 # simulate-delay API로 지연을 줄 수 있어 Istio 타임아웃·재시도 실습에 사용한다.
+#
+# [트레이스 확인] 10_demo 케이스 A: order → inventory → payment 3단 스팬의 말단.
+#   Jaeger operation "http post /api/payments" | 케이스 B(risky 503) 시 payment 스팬 없음.
 
 ---
 apiVersion: apps/v1
@@ -27,7 +30,7 @@ spec:
           ports:
             - containerPort: 8081
           env:
-            # observe/otel-collector 로 전송(11-mesh-egress TLS DISABLE 필요).
+            # [traces] observe/otel-collector 로 스팬 전송(11-mesh-egress TLS DISABLE 필요)
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
               value: http://otel-collector.observe:4318/v1/traces
             - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT

@@ -2,6 +2,12 @@
 # 진입점: POST http://<INGRESS_HOST>/api/orders (lab-access 기준 http://localhost:18088/api/orders)
 # 흐름: ingressgateway → order-service → inventory-service(라운드로빈: latest|risky) → payment-service.
 # 라운드로빈·서킷브레이커는 inventory 의 DestinationRule(10-inventory-circuit-breaking.yaml) 에서 설정한다.
+#
+# [서킷브레이크·스케일아웃] 09_demo-inventory-circuit-break.sh 트래픽 진입:
+#   POST http://localhost:18088/api/orders (LAB_PORT_INGRESS) → order → inventory(RR+CB)
+#
+# [트레이스 확인] 10_demo-kiali-traces.sh 가 트래픽을 넣는 URL:
+#   LAB_PORT_INGRESS(18088) → 이 Gateway/VS → order-service (분산 trace 시작점)
 
 ---
 apiVersion: networking.istio.io/v1beta1
@@ -33,9 +39,9 @@ spec:
   http:
     - match:
         - uri:
-            prefix: /api/orders
+            prefix: /api/orders  # 09_demo·10_demo 공통 POST 진입 (CB/HPA 트래픽 유도)
       route:
         - destination:
-            host: order-service  # msaedu/order-service Service(8080)
+            host: order-service
             port:
               number: 8080

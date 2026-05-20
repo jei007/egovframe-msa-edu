@@ -16,6 +16,7 @@ management:
     health:
       probes:
         enabled: true
+  # [traces] 10_demo 케이스 A 말단 스팬 — operation "http post /api/payments"
   tracing:
     sampling:
       probability: 1.0
@@ -42,6 +43,6 @@ springdoc:
 
 logging:
   pattern:
-    correlation: "[%X{traceId:-},%X{spanId:-}] "
+    correlation: "[%X{traceId:-},%X{spanId:-}] "  # [traces] 동일 traceId 로 order·inventory 와 연결
   level:
     root: INFO

@@ -1,5 +1,11 @@
 # 주문 서비스: Istio Ingress(/api/orders) 진입점. inventory-service 만 호출한다.
 # 실제 주문/결제 흐름은 inventory 가 payment 까지 연쇄 호출하므로 라우팅·CB는 inventory-service 쪽에서 다룬다.
+#
+# [서킷브레이크] 09_demo: inventory 503(risky) 시 앱이 502 반환 — CB 정책 자체는 10-inventory-circuit-breaking.yaml
+#
+# [트레이스 확인] 10_demo-kiali-traces.sh 루트 스팬:
+#   POST /api/orders → Jaeger service order-service, operation "http post /api/orders"
+#   verify_tracing_otlp_from_order 는 이 Pod 에서 otel-collector:4318 연결 검사
 
 ---
 apiVersion: apps/v1
@@ -30,8 +36,10 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            # [circuit-breaker] 단일 Service → Envoy RR(latest|risky) — 09_demo 가 201/502 교차 관찰
             - name: INVENTORY_BASE_URL
-              value: http://inventory-service:8082  # 클러스터 DNS(단일 Service → latest|risky RR)
+              value: http://inventory-service:8082
+            # [traces] Micrometer OTLP → 07-otel-collector (11-mesh-egress TLS DISABLE 필수)
             - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
               value: http://otel-collector.observe:4318/v1/traces
             - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT

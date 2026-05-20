@@ -22,11 +22,13 @@ management:
     health:
       probes:
         enabled: true
+  # [traces] 10_demo-kiali-traces.sh — Jaeger service명=order-service, 전량 수집(교육용)
   tracing:
     sampling:
-      probability: 1.0
+      probability: 1.0  # 1.0 미만이면 UI 에 스팬이 안 보일 수 있음
   otlp:
     tracing:
+      # k8s 02-order-service OTEL_EXPORTER_OTLP_TRACES_ENDPOINT → 07-otel-collector → Jaeger
       endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector.observe:4318/v1/traces}
   metrics:
     export:
@@ -49,6 +51,7 @@ springdoc:
 
 logging:
   pattern:
+    # [traces] 10_demo 마지막 kubectl logs 와 Jaeger traceId 상관
     correlation: "[%X{traceId:-},%X{spanId:-}] "
   level:
     root: INFO

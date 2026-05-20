@@ -2,7 +2,12 @@
 # - Query HTTP: Service jaeger:16686 (Kiali internal_url)
 # - OTLP gRPC 수신: :4317 (otel-collector otlp/jaeger exporter)
 # - 브라우저 UI 고정 포트 30003 은 infra/k8s/08-jaeger-ui-nodeport.yaml 로 노출한다.
+#
+# [트레이스 확인] 10_demo-kiali-traces.sh:
+#   - verify_tracing_jaeger_services: order/inventory/payment-service 3개 등록 기대
+#   - operation 예: "http post /api/orders" (Jaeger UI·스크립트 [3/4] 요약)
+#   - 05_start-lab-access 후 브라우저: http://localhost:13003 (LAB_PORT_JAEGER)
 
 storage:
-  # memory: Pod 재시작·Jaeger 재배포 시 trace 소실. 데모 후 바로 UI 에서 확인할 것.
+  # [traces] memory: Pod 재시작·재배포 시 trace 소실 — 10_demo 트래픽 직후 UI 확인 권장
   type: memory
